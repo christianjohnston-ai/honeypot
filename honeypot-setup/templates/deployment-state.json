@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "deployment_id": "SET_RANDOM_UUID_LOCALLY",
+  "friendly_name": "SET_NONSECRET_LABEL",
+  "environment": "development",
+  "owned_or_authorized_scope": "",
+  "stage": "discovery",
+  "mode": "guided",
+  "platform_products": [],
+  "detection_goal": "",
+  "access_capabilities": [],
+  "budget_and_maintenance": "",
+  "data_handling_choice": "",
+  "route": null,
+  "coverage": "",
+  "trigger": "",
+  "limitations": [],
+  "resource_identity": {
+    "local_config_path": null,
+    "source_revision": null,
+    "image_digest": null,
+    "resource_label": null,
+    "protected_inventory_path": null
+  },
+  "alert": {
+    "channel": null,
+    "destination_label": null,
+    "secret_reference_name": null,
+    "transport_accepted": false,
+    "receipt_method": null
+  },
+  "acceptance": {
+    "detector_operating": false,
+    "controlled_trigger_event_observed": false,
+    "destination_receipt_confirmed": false,
+    "test_started_at_utc": null,
+    "event_id_or_correlation": null,
+    "receipt_evidence_reference": null,
+    "status": "not_configured"
+  },
+  "approvals_and_existing_authorization": [],
+  "completed_steps": [],
+  "next_step": "Discover application and detection goal",
+  "backup_paths": [],
+  "health_check_owner_and_schedule": "",
+  "removal_plan": "",
+  "updated_at_utc": null
+}

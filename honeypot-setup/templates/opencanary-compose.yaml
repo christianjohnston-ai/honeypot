@@ -1,0 +1,42 @@
+# Copy to a private deployment directory as compose.yaml.
+# Build the reviewed release locally; record its image ID in deployment state.
+name: honeypot-setup
+services:
+  opencanary:
+    image: local/opencanary:0.9.10-reviewed
+    pull_policy: never
+    labels:
+      org.honeypot-setup.managed: "true"
+      org.honeypot-setup.source-commit: "fb12e4fefbdb1b9acd1e5561a2614f827ab639ff"
+    # Preserve root-group write access across rotation and subsequent startups.
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["umask 0007; exec opencanaryd --dev --uid=nobody --gid=nogroup"]
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["SETUID", "SETGID"]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    tmpfs:
+      - /run:rw,nosuid,nodev,noexec,size=4m,uid=65534,gid=0,mode=0770
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: ./opencanary.conf
+        target: /etc/opencanaryd/opencanary.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./logs
+        target: /var/log/opencanary
+        bind:
+          create_host_path: false
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"

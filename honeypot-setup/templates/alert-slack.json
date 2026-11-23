@@ -1,0 +1,5 @@
+{
+  "channel": "slack",
+  "destination_label": "Private security channel",
+  "url_env": "DECOY_SLACK_WEBHOOK"
+}

@@ -1,0 +1,5 @@
+{
+  "channel": "discord",
+  "destination_label": "Private security channel",
+  "url_env": "DECOY_DISCORD_WEBHOOK"
+}

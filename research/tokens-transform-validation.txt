@@ -1,0 +1,4 @@
+2026-11-23
+Node v24.5.0
+PASS: n8n transform: allowlist, sentinel redaction, malicious-field fallback, malformed body rejection
+This exercised the inline Code-node transform outside n8n. No workflow deployment, queue, retry, or recipient delivery tested.

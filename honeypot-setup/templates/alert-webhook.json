@@ -1,0 +1,6 @@
+{
+  "channel": "webhook",
+  "destination_label": "Private security workflow",
+  "url_env": "DECOY_WEBHOOK_URL",
+  "bearer_env": "DECOY_WEBHOOK_BEARER"
+}

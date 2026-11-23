@@ -1,0 +1,11 @@
+{
+  "channel": "smtp",
+  "destination_label": "Security inbox",
+  "host": "smtp.example.invalid",
+  "port": 587,
+  "tls": "starttls",
+  "username": "REPLACE_LOCALLY",
+  "password_env": "DECOY_SMTP_PASSWORD",
+  "from": "decoy@example.invalid",
+  "to": "security@example.invalid"
+}

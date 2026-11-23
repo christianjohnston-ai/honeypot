@@ -1,0 +1,349 @@
+{
+  "thinkst/canarytokens": {
+    "releases?per_page=3": [],
+    "tags?per_page=5": [],
+    "security-advisories": [
+      {
+        "ghsa_id": "GHSA-23pf-xjp2-48q6",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-23pf-xjp2-48q6",
+        "summary": "Stored Cross-Site Scripting in Canarytokens",
+        "severity": "low",
+        "updated_at": "2026-06-24T11:11:14Z",
+        "published_at": "2026-06-24T11:11:14Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "sha-4116b92cb",
+            "patched_versions": "sha-f5aa5c4e",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-vcfc-7466-8q65",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-vcfc-7466-8q65",
+        "summary": "HTML injection in the Canarytoken Google Chat notification",
+        "severity": "low",
+        "updated_at": "2026-06-22T13:04:53Z",
+        "published_at": "2026-06-22T13:04:53Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "sha-4aef1db90",
+            "patched_versions": "sha-8ab4dccd",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-55jf-cqr9-r7p4",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-55jf-cqr9-r7p4",
+        "summary": "HTML injection in the Canarytoken links email",
+        "severity": "medium",
+        "updated_at": "2026-06-10T11:34:41Z",
+        "published_at": "2026-06-10T11:34:41Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "sha-c0f3cf142",
+            "patched_versions": "sha-08c3f93d",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-hmjv-pj8j-8fg7",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-hmjv-pj8j-8fg7",
+        "summary": "HTML injection in the notification email for \"Slow Redirect\" and \"Cloned Website\" Canarytokens",
+        "severity": "low",
+        "updated_at": "2026-06-03T12:59:22Z",
+        "published_at": "2026-06-03T12:59:22Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-bfda4df",
+            "patched_versions": "sha-bfda4df",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-6734-fqcj-x5h3",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-6734-fqcj-x5h3",
+        "summary": "Stored Self Cross-Site Scripting in the \"PWA\" Canarytoken",
+        "severity": "low",
+        "updated_at": "2026-02-27T15:52:30Z",
+        "published_at": "2026-02-27T13:12:05Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-7ff0e12",
+            "patched_versions": "sha-7ff0e12",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-g6h5-pf7p-qmvj",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-g6h5-pf7p-qmvj",
+        "summary": "Blind SSRF via Canarytoken Webhook",
+        "severity": "low",
+        "updated_at": "2024-07-23T14:56:25Z",
+        "published_at": "2024-07-23T14:56:25Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-8ea5315",
+            "patched_versions": "sha-8ea5315",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-xj9h-3j9c-c95h",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-xj9h-3j9c-c95h",
+        "summary": "Stored Cross-Site Scripting in the \"Cloned Website\" Canarytoken",
+        "severity": "low",
+        "updated_at": "2024-07-23T14:56:36Z",
+        "published_at": "2024-07-23T14:56:36Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-8ea5315",
+            "patched_versions": "sha-8ea5315",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-fh3j-qr74-63fr",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-fh3j-qr74-63fr",
+        "summary": "ReDoS via Outdated python-multipart Library",
+        "severity": "medium",
+        "updated_at": "2024-07-23T14:56:41Z",
+        "published_at": "2024-07-23T14:56:41Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-8ea5315",
+            "patched_versions": "sha-8ea5315",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-fqh6-v4qp-65fv",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-fqh6-v4qp-65fv",
+        "summary": "CSV Injection in exported history CSV files",
+        "severity": "medium",
+        "updated_at": "2024-03-06T18:47:10Z",
+        "published_at": "2024-03-06T15:05:54Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": " docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-c595a1f8",
+            "patched_versions": "sha-c595a1f8",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-3h2c-3fgr-74vh",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-3h2c-3fgr-74vh",
+        "summary": "Cross-Site Scripting in Canarytoken history",
+        "severity": "medium",
+        "updated_at": "2023-01-06T14:21:06Z",
+        "published_at": "2023-01-06T10:02:21Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-10b9a13",
+            "patched_versions": "sha-fb61290",
+            "vulnerable_functions": []
+          }
+        ]
+      },
+      {
+        "ghsa_id": "GHSA-5675-3424-hpqr",
+        "html_url": "https://github.com/thinkst/canarytokens/security/advisories/GHSA-5675-3424-hpqr",
+        "summary": "Cross-Site Scripting in Canarytoken history",
+        "severity": "medium",
+        "updated_at": "2022-07-01T08:21:36Z",
+        "published_at": "2022-07-01T08:21:36Z",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "docker",
+              "name": "Canarytokens"
+            },
+            "vulnerable_version_range": "< sha-90e3a93",
+            "patched_versions": "sha-dc37895",
+            "vulnerable_functions": []
+          }
+        ]
+      }
+    ]
+  },
+  "thinkst/canarytokens-docker": {
+    "releases?per_page=3": [],
+    "tags?per_page=5": [
+      {
+        "name": "v1.5",
+        "commit": {
+          "sha": "f5592e114a1ba480581751a86ba9bf44601b7ade",
+          "url": "https://api.github.com/repos/thinkst/canarytokens-docker/commits/f5592e114a1ba480581751a86ba9bf44601b7ade"
+        }
+      }
+    ],
+    "security-advisories": []
+  },
+  "beelzebub-labs/beelzebub": {
+    "releases?per_page=3": [
+      {
+        "html_url": "https://github.com/beelzebub-labs/beelzebub/releases/tag/v3.10.0",
+        "tag_name": "v3.10.0",
+        "name": "v3.10.0",
+        "updated_at": "2026-10-27T12:55:36Z",
+        "published_at": "2026-10-27T12:55:36Z"
+      },
+      {
+        "html_url": "https://github.com/beelzebub-labs/beelzebub/releases/tag/v3.9.2",
+        "tag_name": "v3.9.2",
+        "name": "v3.9.2",
+        "updated_at": "2026-09-23T13:39:53Z",
+        "published_at": "2026-09-23T13:39:53Z"
+      },
+      {
+        "html_url": "https://github.com/beelzebub-labs/beelzebub/releases/tag/v3.9.1",
+        "tag_name": "v3.9.1",
+        "name": "v3.9.1",
+        "updated_at": "2026-08-31T10:11:51Z",
+        "published_at": "2026-08-31T10:11:51Z"
+      }
+    ],
+    "tags?per_page=5": [
+      {
+        "name": "v3.10.0",
+        "commit": {
+          "sha": "a02d0354e19a01e97eeccaf1874419dcb05b94ca",
+          "url": "https://api.github.com/repos/beelzebub-labs/beelzebub/commits/a02d0354e19a01e97eeccaf1874419dcb05b94ca"
+        }
+      },
+      {
+        "name": "v3.9.2",
+        "commit": {
+          "sha": "01c5f83946ec7495fbdddf617b25c0aefef44b2d",
+          "url": "https://api.github.com/repos/beelzebub-labs/beelzebub/commits/01c5f83946ec7495fbdddf617b25c0aefef44b2d"
+        }
+      },
+      {
+        "name": "v3.9.1",
+        "commit": {
+          "sha": "16536500b6b96840675e08aded74af14c22619a8",
+          "url": "https://api.github.com/repos/beelzebub-labs/beelzebub/commits/16536500b6b96840675e08aded74af14c22619a8"
+        }
+      },
+      {
+        "name": "v3.9.0",
+        "commit": {
+          "sha": "39242822af79a59a6b8d0139adc4a8ccf2edec0c",
+          "url": "https://api.github.com/repos/beelzebub-labs/beelzebub/commits/39242822af79a59a6b8d0139adc4a8ccf2edec0c"
+        }
+      },
+      {
+        "name": "v3.8.0",
+        "commit": {
+          "sha": "e6145fae893bb93e936867b2b5e81fdd2f69d4b3",
+          "url": "https://api.github.com/repos/beelzebub-labs/beelzebub/commits/e6145fae893bb93e936867b2b5e81fdd2f69d4b3"
+        }
+      }
+    ],
+    "security-advisories": []
+  },
+  "mukul975/Anthropic-Cybersecurity-Skills": {
+    "releases?per_page=3": [
+      {
+        "html_url": "https://github.com/mukul975/Anthropic-Cybersecurity-Skills/releases/tag/v1.3.0",
+        "tag_name": "v1.3.0",
+        "name": "v1.3.0",
+        "updated_at": "2026-06-22T17:11:11Z",
+        "published_at": "2026-06-22T17:11:11Z"
+      },
+      {
+        "html_url": "https://github.com/mukul975/Anthropic-Cybersecurity-Skills/releases/tag/v1.2.0",
+        "tag_name": "v1.2.0",
+        "name": "Cybersecurity Agent Skills v1.2.0 \u2014 Five Framework Coverage",
+        "updated_at": "2026-04-06T10:29:25Z",
+        "published_at": "2026-04-06T10:06:44Z"
+      },
+      {
+        "html_url": "https://github.com/mukul975/Anthropic-Cybersecurity-Skills/releases/tag/v1.1.0",
+        "tag_name": "v1.1.0",
+        "name": "v1.1.0 \u2014 753 Cybersecurity Skills",
+        "updated_at": "2026-03-21T12:08:31Z",
+        "published_at": "2026-03-21T11:52:54Z"
+      }
+    ],
+    "tags?per_page=5": [
+      {
+        "name": "v1.3.0",
+        "commit": {
+          "sha": "101ca0bd887a295e39cc20a100efa571937ca969",
+          "url": "https://api.github.com/repos/mukul975/Anthropic-Cybersecurity-Skills/commits/101ca0bd887a295e39cc20a100efa571937ca969"
+        }
+      },
+      {
+        "name": "v1.2.0",
+        "commit": {
+          "sha": "c0ab6cfccb0ad151d130b1c243a05af6120861ff",
+          "url": "https://api.github.com/repos/mukul975/Anthropic-Cybersecurity-Skills/commits/c0ab6cfccb0ad151d130b1c243a05af6120861ff"
+        }
+      },
+      {
+        "name": "v1.1.0",
+        "commit": {
+          "sha": "e2c3836c300c41b466c82aa57be0b500884101f4",
+          "url": "https://api.github.com/repos/mukul975/Anthropic-Cybersecurity-Skills/commits/e2c3836c300c41b466c82aa57be0b500884101f4"
+        }
+      },
+      {
+        "name": "v1.0.0",
+        "commit": {
+          "sha": "dfea41c26a1a6123fce979d6c86b5fb7aa90e4d6",
+          "url": "https://api.github.com/repos/mukul975/Anthropic-Cybersecurity-Skills/commits/dfea41c26a1a6123fce979d6c86b5fb7aa90e4d6"
+        }
+      }
+    ],
+    "security-advisories": []
+  }
+}

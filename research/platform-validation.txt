@@ -1,0 +1,1 @@
+2026-11-23 — Executed local Node test of JavaScript snippet extracted from route-app-decoy.md. PASS: exact route matching, harmless 404, no-store, allowlisted event fields, UUID/time generation, secret/query/header exclusion, durable-enqueue failure signal, invalid path rejection. Mock enqueue only; no cloud deployment or destination delivery tested.

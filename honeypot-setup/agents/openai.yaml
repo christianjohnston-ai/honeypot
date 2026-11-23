@@ -1,0 +1,4 @@
+interface:
+  display_name: "Honeypot Setup"
+  short_description: "Set up decoys and verify useful security alerts"
+  default_prompt: "Use $honeypot-setup to choose a decoy for my application and verify its alert reaches me."

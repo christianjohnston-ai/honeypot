@@ -1,0 +1,36 @@
+{
+  "device.node_id": "decoy-http-lab",
+  "device.listen_addr": "127.0.0.1",
+  "ip.ignorelist": [],
+  "logtype.ignorelist": [],
+  "http.enabled": true,
+  "http.port": 8080,
+  "http.skin": "nasLogin",
+  "http.banner": "Internal document service",
+  "http.log_redirect_request": true,
+  "http.log_unimplemented_method_requests": true,
+  "ftp.enabled": false,
+  "ssh.enabled": false,
+  "smb.enabled": false,
+  "portscan.enabled": false,
+  "redis.enabled": false,
+  "mongodb.enabled": false,
+  "logger": {
+    "class": "PyLogger",
+    "kwargs": {
+      "formatters": {
+        "plain": { "format": "%(message)s" }
+      },
+      "handlers": {
+        "file": {
+          "class": "logging.handlers.RotatingFileHandler",
+          "filename": "/var/log/opencanary/events.jsonl",
+          "formatter": "plain",
+          "maxBytes": 2097152,
+          "backupCount": 8,
+          "encoding": "utf-8"
+        }
+      }
+    }
+  }
+}
