@@ -436,6 +436,15 @@ class WindowsAclTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             d._validate_windows_acl(p, directory=True)
 
+    def test_reject_unexpected_inheritance_flags(self):
+        p = self.root / "inherit-only-state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        subprocess.run(["icacls", str(p), "/grant", "*S-1-5-11:(OI)(CI)(IO)(F)"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with self.assertRaises(ValueError):
+            d._validate_windows_acl(p, directory=True)
+
     def test_orphan_sidecar_with_unapproved_acl_rejected_before_connect(self):
         state = self.root / "orphan-state"
         d.secure_dir(state)
