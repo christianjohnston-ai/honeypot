@@ -144,10 +144,21 @@ class Tests(unittest.TestCase):
 
     def test_permissions_and_symlink(self):
         p = self.root / "config.json"
-        p.write_text(json.dumps(self.config)); p.chmod(0o644)
-        with self.assertRaises(ValueError): d.load_config(p)
-        p.chmod(0o600)
-        self.assertEqual(d.load_config(p)["channel"], "webhook")
+        p.write_text(json.dumps(self.config))
+        if os.name == "nt":
+            d._apply_windows_acl(p, directory=False)
+            # Weaken ACL by granting Everyone, then restore approved ACL.
+            import subprocess
+            subprocess.run(["icacls", str(p), "/grant", "*S-1-1-0:(F)"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with self.assertRaises(ValueError): d.load_config(p)
+            d._apply_windows_acl(p, directory=False)
+            self.assertEqual(d.load_config(p)["channel"], "webhook")
+        else:
+            p.chmod(0o644)
+            with self.assertRaises(ValueError): d.load_config(p)
+            p.chmod(0o600)
+            self.assertEqual(d.load_config(p)["channel"], "webhook")
         link = self.root / "link.json"; link.symlink_to(p)
         with self.assertRaises(ValueError): d.load_config(link)
 
@@ -249,7 +260,10 @@ class Tests(unittest.TestCase):
         self.assertIsNone(evidence["received"])
         self.assertEqual(evidence["status"], "accepted")
         self.assertEqual(d.status(self.conn)["counts"], {})
-        self.assertEqual(export.stat().st_mode & 0o777, 0o600)
+        if os.name == "nt":
+            d._validate_windows_acl(export)
+        else:
+            self.assertEqual(export.stat().st_mode & 0o777, 0o600)
 
     def test_prune_export_never_overwrites_existing_file(self):
         self.add()
