@@ -277,10 +277,13 @@ class Tests(unittest.TestCase):
 
     def test_orphan_sqlite_sidecar_is_rejected_before_connect(self):
         state = self.root / "orphan-state"
-        state.mkdir(mode=0o700)
+        d.secure_dir(state)
         orphan = state / "outbox.sqlite3-wal"
         orphan.write_text("untrusted orphan")
-        if os.name != "nt":
+        if os.name == "nt":
+            subprocess.run(["icacls", str(orphan), "/grant", "*S-1-1-0:(F)"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
             orphan.chmod(0o644)
         with mock.patch.object(d.sqlite3, "connect") as connect:
             with self.assertRaises(ValueError):
