@@ -229,8 +229,8 @@ def _validate_windows_acl(path, directory=None):
             # The helper creates inheritable directory ACEs (OI|CI) and
             # non-inheritable file ACEs. Inherited ACEs may carry INHERITED_ACE.
             allowed_flags = ({0x03, 0x13} if directory is True else
-                             {0x00, 0x10} if directory is False else
-                             {0x00, 0x03, 0x10, 0x13})
+                             {0x00, 0x10, 0x11} if directory is False else
+                             {0x00, 0x03, 0x10, 0x11, 0x13})
             if ace_flags not in allowed_flags:
                 raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
             sid_ptr = ace_ptr.value + 8
