@@ -275,6 +275,18 @@ class Tests(unittest.TestCase):
         self.assertEqual(export.read_text(), "keep")
         self.assertEqual(d.status(self.conn)["counts"], {"accepted": 1})
 
+    def test_orphan_sqlite_sidecar_is_rejected_before_connect(self):
+        state = self.root / "orphan-state"
+        state.mkdir(mode=0o700)
+        orphan = state / "outbox.sqlite3-wal"
+        orphan.write_text("untrusted orphan")
+        if os.name != "nt":
+            orphan.chmod(0o644)
+        with mock.patch.object(d.sqlite3, "connect") as connect:
+            with self.assertRaises(ValueError):
+                d.database(state)
+            connect.assert_not_called()
+
     def test_prune_locks_export_snapshot_against_concurrent_dispatch(self):
         self.add()
         d.flush(self.conn, self.config, lambda c,e: None)
@@ -392,6 +404,45 @@ class WindowsAclTests(unittest.TestCase):
         with mock.patch.object(d, "_validate_windows_acl", side_effect=d.ConfigError("boom")):
             with self.assertRaises(ValueError):
                 d.secure_dir(p)
+
+    def test_reject_unapproved_inherited_grant(self):
+        parent = self.root / "parent"
+        parent.mkdir()
+        d._apply_windows_acl(parent, directory=True)
+        self._icacls_grant(parent, "S-1-1-0")
+        child = parent / "state"
+        child.mkdir()
+        with self.assertRaises(ValueError):
+            d._validate_windows_acl(child, directory=True)
+
+    def test_reject_deny_ace(self):
+        p = self.root / "deny-state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        subprocess.run(["icacls", str(p), "/deny", "*S-1-1-0:(F)"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with self.assertRaises(ValueError):
+            d._validate_windows_acl(p, directory=True)
+
+    def test_reject_non_full_control_mask(self):
+        p = self.root / "read-only-state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        subprocess.run(["icacls", str(p), "/grant", "*S-1-5-11:(R)"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with self.assertRaises(ValueError):
+            d._validate_windows_acl(p, directory=True)
+
+    def test_orphan_sidecar_with_unapproved_acl_rejected_before_connect(self):
+        state = self.root / "orphan-state"
+        d.secure_dir(state)
+        orphan = state / "outbox.sqlite3-wal"
+        orphan.write_text("untrusted orphan")
+        self._icacls_grant(orphan, "S-1-1-0")
+        with mock.patch.object(d.sqlite3, "connect") as connect:
+            with self.assertRaises(ValueError):
+                d.database(state)
+            connect.assert_not_called()
 
     def test_reparse_point_dir_rejected(self):
         # directory junction via mklink /J
