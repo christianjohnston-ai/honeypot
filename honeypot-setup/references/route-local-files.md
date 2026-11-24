@@ -50,7 +50,9 @@ Trusted principals:
 - LocalSystem (`S-1-5-18`).
 - BUILTIN Administrators (`S-1-5-32-544`).
 
-Other principals receive no access grants. Inherited grants to Everyone, Authenticated Users, Users or other unapproved principals are rejected. Existing directories and configuration files are validated but never silently rewritten. Symlinks and reparse points are rejected. ACL or Windows API failures fail closed with a `ConfigError`.
+Other principals receive no access grants. The validator accepts only standard allow ACEs for approved SIDs, with the full-control mask emitted by this helper and the expected directory/file inheritance flags. Deny, object, callback, audit and other unsupported ACE types, unexpected masks/flags, malformed ACE/SID data, and inherited grants to Everyone, Authenticated Users, Users or any other unapproved principal are rejected. This is a deliberately narrow DACL policy, not a general Windows effective-access evaluator. Existing directories and configuration files are validated but never silently rewritten. Symlinks and reparse points are rejected. ACL or Windows API failures fail closed with a `ConfigError`.
+
+SQLite's main database and every pre-existing `-wal`, `-shm` and `-journal` sidecar are checked before SQLite is allowed to open the database, including orphan sidecars when the main database is absent. Newly created sidecars must inherit the already-validated private state-directory DACL; the helper does not attempt to repair a sidecar after SQLite may have written sensitive data.
 
 If an ACL check fails, restrict access to your Windows user, SYSTEM and Administrators before continuing. Do not weaken the check or rely on `chmod` success on Windows.
 
