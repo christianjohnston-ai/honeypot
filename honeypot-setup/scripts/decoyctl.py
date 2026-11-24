@@ -55,6 +55,7 @@ def _windows_current_user_sid_string():
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
     kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetLastError.restype = wintypes.DWORD
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
     kernel32.LocalFree.argtypes = [ctypes.c_void_p]
@@ -70,7 +71,10 @@ def _windows_current_user_sid_string():
         raise ConfigError("Unable to inspect Windows security token")
     try:
         length = wintypes.DWORD(0)
-        advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(length))
+        if advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(length)):
+            raise ConfigError("Unable to inspect Windows security token")
+        if kernel32.GetLastError() != 122 or length.value == 0:
+            raise ConfigError("Unable to inspect Windows security token")
         buffer = ctypes.create_string_buffer(length.value)
         if not advapi32.GetTokenInformation(token, 1, buffer, length.value, ctypes.byref(length)):
             raise ConfigError("Unable to inspect Windows security token")
@@ -149,8 +153,11 @@ def _windows_security_descriptor(path):
     advapi32.GetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
     advapi32.GetFileSecurityW.restype = wintypes.BOOL
     needed = wintypes.DWORD(0)
-    advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, None, 0, ctypes.byref(needed))
-    if needed.value == 0:
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetLastError.restype = wintypes.DWORD
+    if advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, None, 0, ctypes.byref(needed)):
+        raise ConfigError("Unable to inspect Windows access control")
+    if kernel32.GetLastError() != 122 or needed.value == 0:
         raise ConfigError("Unable to inspect Windows access control")
     buffer = ctypes.create_string_buffer(needed.value)
     if not advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, buffer, needed.value, ctypes.byref(needed)):
