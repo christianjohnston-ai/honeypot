@@ -1,6 +1,6 @@
 # Validation report — 2026-11-23
 
-Package version **1.0.0**. Primary target Claude Code; portable Codex instruction-format package. Build environment: macOS/ARM64, Python3.10.4, Node24.5.0, Docker client27.3.1 with **no reachable Docker daemon**. This report distinguishes execution, simulation, documentation/source review and untested work. No customer infrastructure was provisioned, public service exposed, live token created, real malware used, external alert sent or package published.
+Package version **1.0.0**. Primary target Claude Code; portable Codex instruction-format package. Build environment: macOS/ARM64, Python3.10.4, Node24.5.0, Docker client27.3.1 with **no reachable Docker daemon**. Windows ACL validation environment: Windows 11, Python 3.13.14. This report distinguishes execution, simulation, documentation/source review and untested work. No customer infrastructure was provisioned, public service exposed, live token created, real malware used, external alert sent or package published.
 
 ## Executed local verification
 
@@ -32,6 +32,7 @@ An independent agent evaluated the skill and code without editing implementation
 5. Provider-first routing could obscure an explicit SSH goal; the goal/protocol now takes precedence.
 6. Export/prune could race a dispatcher; an immediate SQLite transaction now locks the snapshot through export/delete.
 7. Moving to a new outbox could lose file-watch registration; migration/re-baseline and its observation gap are explicit, and empty watch polling fails.
+8. A subsequent Windows ACL review tightened ACE validation to the helper's narrow allowlist (principal, full-control mask and inheritance flags), completed the relevant Win32 API signatures and allocation cleanup, and moved all existing SQLite sidecar checks ahead of `sqlite3.connect`. Regression cases now cover orphan WAL/SHM/journal sidecars, unapproved inherited grants, deny ACEs, unexpected access masks and inheritance flags. Security descriptor and ACL structure validation also fails closed. **These latest additions have not yet been rerun on Windows 11**; the earlier Windows 11 result does not validate this newer revision.
 
 A separate source review found the initial container permission plan would fail when root lacked DAC override before dropping UID. The revised log directory/file group permissions, setgid inheritance, startup umask and PID tmpfs account for startup, rotation and shutdown. These corrections were source/config validated; actual Linux execution is still required.
 
@@ -63,7 +64,7 @@ No upstream community/installer script was executed. OpenCanary source and locke
 | Hosted HTTP/DNS/document/AWS Canarytokens | Guided instructions ready for runtime use; current docs/source cross-checked | No created token, actual viewer callback, AWS API use or received provider email. Document reader/egress differences and AWS delay/gaps must be tested. No brittle automated free-service creation API shipped. |
 | Hosted MCP token | Guided instructions ready; current official mechanism and client-isolation options reviewed | No live MCP handshake/tool invocation or client-version compatibility test. Generated JSON is not promised to import unchanged into every agent. |
 | OpenCanary HTTP on isolated Linux | Reviewed pinned-source recipe and validated Compose/config | Container startup, filesystem permissions under real Linux, networking, reboot/recovery, native events and external delivery still require disposable runtime test. No claim of production readiness. |
-| Local file watcher + generic HTTP | Local code and actual disposable receiver chain tested | Linux scheduling and macOS launchd unattended setup not executed; Windows ACL/scheduler compatibility unsupported by this validation. No reads/copies/ransomware identification. |
+| Local file watcher + generic HTTP | Local code and actual disposable receiver chain tested; Windows DACL inspection for state directory, database and alert configuration tested | Linux scheduling and macOS launchd unattended setup not executed; Windows scheduler and lifecycle behavior remain unverified. No reads/copies/ransomware identification. |
 | SMTP / Slack / Discord outputs | Implemented; SMTP mocked, HTTP machinery locally exercised, destination schemas reviewed | No actual provider delivery, rate-limit policy, bot/workspace approval or recipient receipt tested. |
 | App HTTP decoy | Original handler pattern locally tested | Durable queue and consumer implementation, framework integration, auth preservation and provider deployment are environment-specific remaining work. |
 | n8n adapter | Transformation locally tested and workflow recipe documented | No live workflow, durable queue, retry/error path or final channel delivery. Native token transport has no reliable upstream retry; downstream durability cannot repair lost intake. |

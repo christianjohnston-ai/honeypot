@@ -47,12 +47,311 @@ def label(value):
     return value
 
 
+def _windows_current_user_sid_string():
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.GetLastError.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
+        raise ConfigError("Unable to inspect Windows security token")
+    try:
+        length = wintypes.DWORD(0)
+        if advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(length)):
+            raise ConfigError("Unable to inspect Windows security token")
+        if kernel32.GetLastError() != 122 or length.value == 0:
+            raise ConfigError("Unable to inspect Windows security token")
+        buffer = ctypes.create_string_buffer(length.value)
+        if not advapi32.GetTokenInformation(token, 1, buffer, length.value, ctypes.byref(length)):
+            raise ConfigError("Unable to inspect Windows security token")
+        sid_ptr = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        string = wintypes.LPWSTR()
+        if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(string)):
+            raise ConfigError("Unable to inspect Windows security token")
+        try:
+            return string.value
+        finally:
+            kernel32.LocalFree(ctypes.cast(string, ctypes.c_void_p))
+    finally:
+        kernel32.CloseHandle(token)
+
+
+def _string_to_sid(value):
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    advapi32.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.ConvertStringSidToSidW.restype = wintypes.BOOL
+    sid = ctypes.c_void_p()
+    if not advapi32.ConvertStringSidToSidW(str(value), ctypes.byref(sid)):
+        raise ConfigError("Unable to parse Windows security identifier")
+    return sid.value
+
+
+def _sid_to_string(sid_ptr):
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    string = wintypes.LPWSTR()
+    if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(string)):
+        return None
+    try:
+        return string.value
+    finally:
+        kernel32.LocalFree(ctypes.cast(string, ctypes.c_void_p))
+
+
+def _approved_windows_sid_strings():
+    return [_windows_current_user_sid_string(), "S-1-5-18", "S-1-5-32-544"]
+
+
+def _is_windows_reparse_point(path):
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetFileAttributesW.restype = wintypes.DWORD
+    kernel32.GetFileAttributesW.argtypes = [wintypes.LPCWSTR]
+    attrs = kernel32.GetFileAttributesW(str(path))
+    if attrs == 0xFFFFFFFF:
+        error = kernel32.GetLastError()
+        if error in (2, 3):  # file/path not found
+            return False
+        raise ConfigError("Unable to inspect Windows reparse point")
+    return bool(attrs & 0x00000400)
+
+
+def _windows_security_descriptor(path):
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    advapi32.GetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetFileSecurityW.restype = wintypes.BOOL
+    needed = wintypes.DWORD(0)
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetLastError.restype = wintypes.DWORD
+    if advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, None, 0, ctypes.byref(needed)):
+        raise ConfigError("Unable to inspect Windows access control")
+    if kernel32.GetLastError() != 122 or needed.value == 0:
+        raise ConfigError("Unable to inspect Windows access control")
+    buffer = ctypes.create_string_buffer(needed.value)
+    if not advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, buffer, needed.value, ctypes.byref(needed)):
+        raise ConfigError("Unable to inspect Windows access control")
+    return buffer
+
+
+def _validate_windows_acl(path, directory=None):
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    p = Path(path)
+    if p.is_symlink() or _is_windows_reparse_point(p):
+        raise ConfigError("State path must not be a symlink or reparse point")
+    try:
+        sd_buffer = _windows_security_descriptor(p)
+        advapi32 = ctypes.windll.advapi32
+        kernel32 = ctypes.windll.kernel32
+        advapi32.IsValidSecurityDescriptor.argtypes = [ctypes.c_void_p]
+        advapi32.IsValidSecurityDescriptor.restype = wintypes.BOOL
+        advapi32.IsValidAcl.argtypes = [ctypes.c_void_p]
+        advapi32.IsValidAcl.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorDacl.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorOwner.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorOwner.restype = wintypes.BOOL
+        if not advapi32.IsValidSecurityDescriptor(sd_buffer):
+            raise ConfigError("Unable to inspect Windows access control")
+        advapi32.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.GetAce.restype = wintypes.BOOL
+        advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
+        advapi32.IsValidSid.restype = wintypes.BOOL
+        advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+        advapi32.GetLengthSid.restype = wintypes.DWORD
+        dacl = ctypes.c_void_p()
+        dacl_present = wintypes.BOOL()
+        dacl_defaulted = wintypes.BOOL()
+        owner = ctypes.c_void_p()
+        owner_defaulted = wintypes.BOOL()
+        if not advapi32.GetSecurityDescriptorDacl(sd_buffer, ctypes.byref(dacl_present), ctypes.byref(dacl), ctypes.byref(dacl_defaulted)):
+            raise ConfigError("Unable to inspect Windows access control")
+        if not dacl_present.value or not dacl.value:
+            raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+        if not advapi32.GetSecurityDescriptorOwner(sd_buffer, ctypes.byref(owner), ctypes.byref(owner_defaulted)):
+            raise ConfigError("Unable to inspect Windows access control")
+        if not owner.value:
+            raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+        approved_strings = set(_approved_windows_sid_strings())
+        owner_string = _sid_to_string(owner.value)
+        if owner_string not in approved_strings:
+            raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+        class _ACL(ctypes.Structure):
+            _fields_ = [("AclRevision", ctypes.c_ubyte), ("Sbz1", ctypes.c_ubyte),
+                        ("AclSize", ctypes.c_ushort), ("AceCount", ctypes.c_ushort),
+                        ("Sbz2", ctypes.c_ushort)]
+        if not advapi32.IsValidAcl(dacl):
+            raise ConfigError("Unable to inspect Windows access control")
+        acl_struct = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
+        if acl_struct.AclSize < 8 or acl_struct.AceCount == 0 or acl_struct.AceCount > 1024:
+            raise ConfigError("Unable to inspect Windows access control")
+        acl_base = ctypes.cast(dacl, ctypes.c_void_p).value
+        acl_limit = acl_base + acl_struct.AclSize
+        for i in range(acl_struct.AceCount):
+            ace_ptr = ctypes.c_void_p()
+            if not advapi32.GetAce(dacl, i, ctypes.byref(ace_ptr)):
+                raise ConfigError("Unable to inspect Windows access control")
+            if not ace_ptr.value or ace_ptr.value < acl_base or ace_ptr.value + 4 > acl_limit:
+                raise ConfigError("Unable to inspect Windows access control")
+            header = ctypes.cast(ace_ptr, ctypes.POINTER(ctypes.c_ubyte * 4)).contents
+            ace_type = header[0]
+            ace_flags = header[1]
+            ace_size = int.from_bytes(bytes(header[2:4]), "little")
+            if ace_size < 8 or ace_ptr.value + ace_size > acl_limit:
+                raise ConfigError("Unable to inspect Windows access control")
+            # Only standard access-allowed ACEs with a full-control mask are
+            # supported. Deny, object, callback and audit ACEs fail closed.
+            if ace_type != 0:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            access_mask = int.from_bytes(bytes(ctypes.cast(
+                ace_ptr, ctypes.POINTER(ctypes.c_ubyte * 8)).contents[4:8]), "little")
+            if access_mask not in (0x10000000, 0x1F01FF):
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            # Inherit-only ACEs (0x08) and inherited ACEs (0x10) are both valid.
+            base_flags = ace_flags & ~0x10
+            if directory is False:
+                allowed_flags = {0x00}
+            else:
+                allowed_flags = {0x00, 0x01, 0x02, 0x03, 0x08, 0x09, 0x0A, 0x0B}
+            if base_flags not in allowed_flags:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            sid_ptr = ace_ptr.value + 8
+            if sid_ptr + 8 > ace_ptr.value + ace_size:
+                raise ConfigError("Unable to inspect Windows access control")
+            if not advapi32.IsValidSid(ctypes.c_void_p(sid_ptr)):
+                raise ConfigError("Unable to inspect Windows access control")
+            sid_length = advapi32.GetLengthSid(ctypes.c_void_p(sid_ptr))
+            if sid_length == 0 or sid_ptr + sid_length > ace_ptr.value + ace_size:
+                raise ConfigError("Unable to inspect Windows access control")
+            sid_string = _sid_to_string(ctypes.c_void_p(sid_ptr).value)
+            if sid_string is None or sid_string not in approved_strings:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+    except ConfigError:
+        raise
+    except Exception:
+        raise ConfigError("Unable to inspect Windows access control")
+
+
+def _apply_windows_acl(path, directory=False):
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    approved = []
+    new_dacl = ctypes.c_void_p()
+    try:
+        for value in _approved_windows_sid_strings():
+            approved.append(_string_to_sid(value))
+
+        class _TRUSTEE(ctypes.Structure):
+            _fields_ = [("pMultipleTrustee", ctypes.c_void_p),
+                        ("MultipleTrusteeOperation", ctypes.c_int),
+                        ("TrusteeForm", ctypes.c_int),
+                        ("TrusteeType", ctypes.c_int),
+                        ("ptstrName", ctypes.c_void_p)]
+
+        class _EXPLICIT_ACCESS(ctypes.Structure):
+            _fields_ = [("grfAccessPermissions", wintypes.DWORD),
+                        ("grfAccessMode", ctypes.c_int),
+                        ("grfInheritance", wintypes.DWORD),
+                        ("Trustee", _TRUSTEE)]
+
+        inheritance = 0x03 if directory else 0x00
+        entries = (_EXPLICIT_ACCESS * len(approved))()
+        for idx, sid in enumerate(approved):
+            entries[idx].grfAccessPermissions = 0x10000000  # GENERIC_ALL
+            entries[idx].grfAccessMode = 2  # SET_ACCESS
+            entries[idx].grfInheritance = inheritance
+            entries[idx].Trustee.pMultipleTrustee = None
+            entries[idx].Trustee.MultipleTrusteeOperation = 0
+            entries[idx].Trustee.TrusteeForm = 0  # TRUSTEE_IS_SID
+            entries[idx].Trustee.TrusteeType = 1  # TRUSTEE_IS_USER (generic)
+            entries[idx].Trustee.ptstrName = sid
+
+        advapi32.SetEntriesInAclW.argtypes = [
+            wintypes.ULONG, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.SetEntriesInAclW.restype = wintypes.DWORD
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+
+        result = advapi32.SetEntriesInAclW(
+            len(approved), ctypes.cast(entries, ctypes.c_void_p), None, ctypes.byref(new_dacl))
+        if result != 0:
+            raise ConfigError("Unable to apply Windows access control")
+        # PROTECTED_DACL_SECURITY_INFORMATION prevents ambient parent grants.
+        info = 0x00000004 | 0x80000000
+        result = advapi32.SetNamedSecurityInfoW(
+            str(path), 1, info, None, None, new_dacl, None)
+        if result != 0:
+            raise ConfigError("Unable to apply Windows access control")
+    except ConfigError:
+        raise
+    except Exception:
+        raise ConfigError("Unable to apply Windows access control")
+    finally:
+        for sid in approved:
+            if sid:
+                kernel32.LocalFree(ctypes.c_void_p(sid))
+        if new_dacl:
+            kernel32.LocalFree(new_dacl)
+
 def secure_dir(path):
     path = Path(path).expanduser()
     if path.is_symlink():
         raise ConfigError("State directory must not be a symlink")
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("State directory must not be a reparse point")
+    created = not path.exists()
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if os.name == "posix" and stat.S_IMODE(path.stat().st_mode) & 0o077:
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("State directory must not be a reparse point")
+    if os.name == "nt":
+        if created:
+            _apply_windows_acl(path, directory=True)
+        _validate_windows_acl(path, directory=True)
+    elif stat.S_IMODE(path.stat().st_mode) & 0o077:
         raise ConfigError("State directory must be private (chmod 700)")
     return path
 
@@ -61,18 +360,51 @@ def secure_file(path):
     p = Path(path)
     if p.is_symlink() or not p.is_file():
         raise ConfigError("Expected a regular, non-symlink configuration file")
-    if os.name == "posix" and stat.S_IMODE(p.stat().st_mode) & 0o077:
+    if os.name == "nt" and _is_windows_reparse_point(p):
+        raise ConfigError("Expected a regular, non-symlink configuration file")
+    if os.name == "nt":
+        _validate_windows_acl(p, directory=False)
+    elif stat.S_IMODE(p.stat().st_mode) & 0o077:
         raise ConfigError("Configuration containing destinations must be private (chmod 600)")
     return p
+
+
+def _sqlite_sidecars(p):
+    return [p.with_name(p.name + suffix) for suffix in ("-wal", "-shm", "-journal")]
+
+
+def _validate_sqlite_state_file(path):
+    path = Path(path)
+    if path.is_symlink():
+        raise ConfigError("Outbox must not be a symlink")
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("Outbox must not be a reparse point")
+    if not path.exists():
+        return
+    if os.name == "nt":
+        secure_file(path)
+    elif stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise ConfigError("Outbox must be private (chmod 600)")
 
 
 def database(directory):
     directory = secure_dir(directory)
     p = directory / "outbox.sqlite3"
-    if p.is_symlink():
-        raise ConfigError("Outbox must not be a symlink")
+    sidecars = _sqlite_sidecars(p)
+    created = not p.exists()
+    # Validate every pre-existing path before SQLite opens anything. Orphaned
+    # WAL/SHM/journal files are not trusted merely because the main DB is absent.
+    existing_state_files = [candidate for candidate in [p, *sidecars] if candidate.exists() or candidate.is_symlink()]
+    for candidate in existing_state_files:
+        _validate_sqlite_state_file(candidate)
+    existing_sidecars = [sc for sc in sidecars if sc.exists()]
     conn = sqlite3.connect(p, timeout=10)
-    os.chmod(p, 0o600)
+    if os.name == "nt":
+        if created:
+            _apply_windows_acl(p, directory=False)
+        _validate_windows_acl(p, directory=False)
+    else:
+        os.chmod(p, 0o600)
     conn.row_factory = sqlite3.Row
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS events (
@@ -84,6 +416,27 @@ def database(directory):
           fingerprint TEXT NOT NULL);
     """)
     conn.commit()
+    # Protect sidecars created during initialization; validate pre-existing ones.
+    for sc in sidecars:
+        if sc.exists():
+            if sc in existing_sidecars:
+                if os.name == "nt":
+                    secure_file(sc)
+                elif stat.S_IMODE(sc.stat().st_mode) & 0o077:
+                    raise ConfigError("Outbox must be private (chmod 600)")
+            else:
+                # Newly created sidecars must inherit the already-validated
+                # private parent-directory DACL. Never repair them after SQLite
+                # may have written sensitive pages; fail closed if inheritance
+                # did not produce the expected ACL.
+                if os.name == "nt":
+                    _validate_sqlite_state_file(sc)
+                else:
+                    # The already-private state directory prevents ambient
+                    # access while SQLite creates the sidecar; tighten mode
+                    # immediately, then verify the resulting mode.
+                    os.chmod(sc, 0o600)
+                    _validate_sqlite_state_file(sc)
     return conn
 
 
@@ -495,7 +848,10 @@ def main(argv=None):
                     secure_dir(target.parent)
                     # x prevents overwrite; mode is restricted before evidence is written.
                     with target.open("x", encoding="utf-8") as out:
-                        os.chmod(target, 0o600)
+                        if os.name == "nt":
+                            _apply_windows_acl(target, directory=False)
+                        else:
+                            os.chmod(target, 0o600)
                         for row in rows: out.write(json.dumps(dict(row)) + "\n")
                         out.flush(); os.fsync(out.fileno())
                 count = conn.execute("DELETE FROM events WHERE " + where, (cutoff,)).rowcount
