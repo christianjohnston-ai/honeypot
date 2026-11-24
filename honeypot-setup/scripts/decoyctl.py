@@ -239,14 +239,15 @@ def _validate_windows_acl(path, directory=None):
                 raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
             access_mask = int.from_bytes(bytes(ctypes.cast(
                 ace_ptr, ctypes.POINTER(ctypes.c_ubyte * 8)).contents[4:8]), "little")
-            if access_mask != 0x10000000:  # GENERIC_ALL, as emitted by _apply_windows_acl
+            if access_mask not in (0x10000000, 0x1F01FF):
                 raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
-            # The helper creates inheritable directory ACEs (OI|CI) and
-            # non-inheritable file ACEs. Inherited ACEs may carry INHERITED_ACE.
-            allowed_flags = ({0x03, 0x13} if directory is True else
-                             {0x00, 0x10, 0x11} if directory is False else
-                             {0x00, 0x03, 0x10, 0x11, 0x13})
-            if ace_flags not in allowed_flags:
+            # Inherit-only ACEs (0x08) and inherited ACEs (0x10) are both valid.
+            base_flags = ace_flags & ~0x10
+            if directory is False:
+                allowed_flags = {0x00}
+            else:
+                allowed_flags = {0x00, 0x01, 0x02, 0x03, 0x08, 0x09, 0x0A, 0x0B}
+            if base_flags not in allowed_flags:
                 raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
             sid_ptr = ace_ptr.value + 8
             if sid_ptr + 8 > ace_ptr.value + ace_size:

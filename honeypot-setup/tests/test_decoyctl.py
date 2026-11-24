@@ -325,8 +325,8 @@ class WindowsAclTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _icacls_grant(self, path, sid):
-        subprocess.run(["icacls", str(path), "/grant", f"*{sid}:(F)"], check=True,
+    def _icacls_grant(self, path, sid, rights="F"):
+        subprocess.run(["icacls", str(path), "/grant", f"*{sid}:({rights})"], check=True,
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def test_create_private_state_dir(self):
@@ -414,7 +414,7 @@ class WindowsAclTests(unittest.TestCase):
         parent = self.root / "parent"
         parent.mkdir()
         d._apply_windows_acl(parent, directory=True)
-        self._icacls_grant(parent, "S-1-1-0")
+        self._icacls_grant(parent, "S-1-1-0", "OI)(CI)(F")
         child = parent / "state"
         child.mkdir()
         with self.assertRaises(ValueError):
@@ -424,7 +424,7 @@ class WindowsAclTests(unittest.TestCase):
         p = self.root / "deny-state"
         p.mkdir()
         d._apply_windows_acl(p, directory=True)
-        subprocess.run(["icacls", str(p), "/deny", "*S-1-1-0:(F)"], check=True,
+        subprocess.run(["icacls", str(p), "/deny", "*S-1-5-7:(F)"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with self.assertRaises(ValueError):
             d._validate_windows_acl(p, directory=True)
