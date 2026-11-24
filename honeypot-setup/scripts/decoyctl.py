@@ -413,9 +413,14 @@ def database(directory):
                 # private parent-directory DACL. Never repair them after SQLite
                 # may have written sensitive pages; fail closed if inheritance
                 # did not produce the expected ACL.
-                _validate_sqlite_state_file(sc)
-                if os.name != "nt":
+                if os.name == "nt":
+                    _validate_sqlite_state_file(sc)
+                else:
+                    # The already-private state directory prevents ambient
+                    # access while SQLite creates the sidecar; tighten mode
+                    # immediately, then verify the resulting mode.
                     os.chmod(sc, 0o600)
+                    _validate_sqlite_state_file(sc)
     return conn
 
 
