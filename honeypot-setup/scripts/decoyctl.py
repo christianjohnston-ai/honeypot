@@ -258,8 +258,12 @@ def _apply_windows_acl(path, directory=False):
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
     approved_strings = _approved_windows_sid_strings()
-    approved = [_string_to_sid(value) for value in approved_strings]
-    inheritance = 0x03 if directory else 0x00
+    approved = []
+    new_dacl = ctypes.c_void_p()
+    try:
+        for value in approved_strings:
+            approved.append(_string_to_sid(value))
+        inheritance = 0x03 if directory else 0x00
     # Build EXPLICIT_ACCESS list.
     class _TRUSTEE(ctypes.Structure):
         _fields_ = [("pMultipleTrustee", ctypes.c_void_p),
@@ -272,31 +276,41 @@ def _apply_windows_acl(path, directory=False):
                     ("grfAccessMode", ctypes.c_int),
                     ("grfInheritance", wintypes.DWORD),
                     ("Trustee", _TRUSTEE)]
-    entries = (_EXPLICIT_ACCESS * len(approved))()
-    for idx, sid in enumerate(approved):
-        entries[idx].grfAccessPermissions = 0x10000000  # GENERIC_ALL
-        entries[idx].grfAccessMode = 2  # SET_ACCESS
-        entries[idx].grfInheritance = inheritance
-        entries[idx].Trustee.pMultipleTrustee = None
-        entries[idx].Trustee.MultipleTrusteeOperation = 0
-        entries[idx].Trustee.TrusteeForm = 0  # TRUSTEE_IS_SID
-        entries[idx].Trustee.TrusteeType = 1  # TRUSTEE_IS_USER (generic)
-        entries[idx].Trustee.ptstrName = sid
-    new_dacl = ctypes.c_void_p()
-    res = advapi32.SetEntriesInAclW(len(approved), entries, None, ctypes.byref(new_dacl))
-    if res != 0:
-        raise ConfigError("Unable to apply Windows access control")
-    try:
+        entries = (_EXPLICIT_ACCESS * len(approved))()
+        for idx, sid in enumerate(approved):
+            entries[idx].grfAccessPermissions = 0x10000000  # GENERIC_ALL
+            entries[idx].grfAccessMode = 2  # SET_ACCESS
+            entries[idx].grfInheritance = inheritance
+            entries[idx].Trustee.pMultipleTrustee = None
+            entries[idx].Trustee.MultipleTrusteeOperation = 0
+            entries[idx].Trustee.TrusteeForm = 0  # TRUSTEE_IS_SID
+            entries[idx].Trustee.TrusteeType = 1  # TRUSTEE_IS_USER (generic)
+            entries[idx].Trustee.ptstrName = sid
+        advapi32.SetEntriesInAclW.argtypes = [wintypes.ULONG, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.SetEntriesInAclW.restype = wintypes.DWORD
+        advapi32.SetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+                                                   ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        kernel32.LocalFree.restype = ctypes.c_void_p
+        res = advapi32.SetEntriesInAclW(len(approved), entries, None, ctypes.byref(new_dacl))
+        if res != 0:
+            raise ConfigError("Unable to apply Windows access control")
         # PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
         info = 0x00000004 | 0x80000000
         r = advapi32.SetNamedSecurityInfoW(str(path), 1, info, None, None, new_dacl, None)
         if r != 0:
             raise ConfigError("Unable to apply Windows access control")
+    except ConfigError:
+        raise
+    except Exception:
+        raise ConfigError("Unable to apply Windows access control")
     finally:
-        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
         for sid in approved:
-            kernel32.LocalFree(sid)
-        kernel32.LocalFree(new_dacl)
+            if sid:
+                kernel32.LocalFree(ctypes.c_void_p(sid))
+        if new_dacl:
+            kernel32.LocalFree(new_dacl)
 
 
 def secure_dir(path):
