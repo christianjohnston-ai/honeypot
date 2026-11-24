@@ -55,9 +55,16 @@ def _windows_current_user_sid_string():
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
     kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
     advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
-    advapi32.CloseHandle = kernel32.CloseHandle
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
     token = wintypes.HANDLE()
     if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
         raise ConfigError("Unable to inspect Windows security token")
@@ -68,14 +75,13 @@ def _windows_current_user_sid_string():
         if not advapi32.GetTokenInformation(token, 1, buffer, length.value, ctypes.byref(length)):
             raise ConfigError("Unable to inspect Windows security token")
         sid_ptr = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
-        advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
-        string = ctypes.c_wchar_p()
+        string = wintypes.LPWSTR()
         if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(string)):
             raise ConfigError("Unable to inspect Windows security token")
-        result = string.value
-        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
-        kernel32.LocalFree(string)
-        return result
+        try:
+            return string.value
+        finally:
+            kernel32.LocalFree(ctypes.cast(string, ctypes.c_void_p))
     finally:
         kernel32.CloseHandle(token)
 
@@ -88,6 +94,7 @@ def _string_to_sid(value):
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
     advapi32.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.ConvertStringSidToSidW.restype = wintypes.BOOL
     sid = ctypes.c_void_p()
     if not advapi32.ConvertStringSidToSidW(str(value), ctypes.byref(sid)):
         raise ConfigError("Unable to parse Windows security identifier")
@@ -101,13 +108,17 @@ def _sid_to_string(sid_ptr):
     from ctypes import wintypes
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
-    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
-    string = ctypes.c_wchar_p()
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    string = wintypes.LPWSTR()
     if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(string)):
         return None
-    result = string.value
-    kernel32.LocalFree(string)
-    return result
+    try:
+        return string.value
+    finally:
+        kernel32.LocalFree(ctypes.cast(string, ctypes.c_void_p))
 
 
 def _approved_windows_sid_strings():
@@ -135,6 +146,8 @@ def _windows_security_descriptor(path):
     import ctypes
     from ctypes import wintypes
     advapi32 = ctypes.windll.advapi32
+    advapi32.GetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetFileSecurityW.restype = wintypes.BOOL
     needed = wintypes.DWORD(0)
     advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, None, 0, ctypes.byref(needed))
     if needed.value == 0:
@@ -145,7 +158,7 @@ def _windows_security_descriptor(path):
     return buffer
 
 
-def _validate_windows_acl(path):
+def _validate_windows_acl(path, directory=None):
     if os.name != "nt":
         return
     import ctypes
@@ -159,7 +172,10 @@ def _validate_windows_acl(path):
         kernel32 = ctypes.windll.kernel32
         advapi32.GetSecurityDescriptorDacl.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
         advapi32.GetSecurityDescriptorOwner.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
+        advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        advapi32.GetSecurityDescriptorOwner.restype = wintypes.BOOL
         advapi32.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+        advapi32.GetAce.restype = wintypes.BOOL
         advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
         advapi32.IsValidSid.restype = wintypes.BOOL
         advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
@@ -202,9 +218,20 @@ def _validate_windows_acl(path):
             ace_size = int.from_bytes(bytes(header[2:4]), "little")
             if ace_size < 8 or ace_ptr.value + ace_size > acl_limit:
                 raise ConfigError("Unable to inspect Windows access control")
-            # Only standard access-allowed ACEs are supported. Deny, object and
-            # callback ACEs are rejected conservatively.
+            # Only standard access-allowed ACEs with a full-control mask are
+            # supported. Deny, object, callback and audit ACEs fail closed.
             if ace_type != 0:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            access_mask = int.from_bytes(bytes(ctypes.cast(
+                ace_ptr, ctypes.POINTER(ctypes.c_ubyte * 8)).contents[4:8]), "little")
+            if access_mask != 0x10000000:  # GENERIC_ALL, as emitted by _apply_windows_acl
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            # The helper creates inheritable directory ACEs (OI|CI) and
+            # non-inheritable file ACEs. Inherited ACEs may carry INHERITED_ACE.
+            allowed_flags = ({0x03, 0x13} if directory is True else
+                             {0x00, 0x10} if directory is False else
+                             {0x00, 0x03, 0x10, 0x13})
+            if ace_flags not in allowed_flags:
                 raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
             sid_ptr = ace_ptr.value + 8
             if sid_ptr + 8 > ace_ptr.value + ace_size:
@@ -285,7 +312,7 @@ def secure_dir(path):
     if os.name == "nt":
         if created:
             _apply_windows_acl(path, directory=True)
-        _validate_windows_acl(path)
+        _validate_windows_acl(path, directory=True)
     elif stat.S_IMODE(path.stat().st_mode) & 0o077:
         raise ConfigError("State directory must be private (chmod 700)")
     return path
@@ -298,7 +325,7 @@ def secure_file(path):
     if os.name == "nt" and _is_windows_reparse_point(p):
         raise ConfigError("Expected a regular, non-symlink configuration file")
     if os.name == "nt":
-        _validate_windows_acl(p)
+        _validate_windows_acl(p, directory=False)
     elif stat.S_IMODE(p.stat().st_mode) & 0o077:
         raise ConfigError("Configuration containing destinations must be private (chmod 600)")
     return p
@@ -308,37 +335,36 @@ def _sqlite_sidecars(p):
     return [p.with_name(p.name + suffix) for suffix in ("-wal", "-shm", "-journal")]
 
 
+def _validate_sqlite_state_file(path):
+    path = Path(path)
+    if path.is_symlink():
+        raise ConfigError("Outbox must not be a symlink")
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("Outbox must not be a reparse point")
+    if not path.exists():
+        return
+    if os.name == "nt":
+        secure_file(path)
+    elif stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise ConfigError("Outbox must be private (chmod 600)")
+
+
 def database(directory):
     directory = secure_dir(directory)
     p = directory / "outbox.sqlite3"
-    if p.is_symlink():
-        raise ConfigError("Outbox must not be a symlink")
-    if os.name == "nt" and _is_windows_reparse_point(p):
-        raise ConfigError("Outbox must not be a reparse point")
     sidecars = _sqlite_sidecars(p)
-    for sidecar in sidecars:
-        if sidecar.is_symlink():
-            raise ConfigError("Outbox must not be a symlink")
-        if os.name == "nt" and sidecar.exists() and _is_windows_reparse_point(sidecar):
-            raise ConfigError("Outbox must not be a reparse point")
     created = not p.exists()
+    # Validate every pre-existing path before SQLite opens anything. Orphaned
+    # WAL/SHM/journal files are not trusted merely because the main DB is absent.
+    existing_state_files = [candidate for candidate in [p, *sidecars] if candidate.exists() or candidate.is_symlink()]
+    for candidate in existing_state_files:
+        _validate_sqlite_state_file(candidate)
     existing_sidecars = [sc for sc in sidecars if sc.exists()]
-    if (not created):
-        if os.name == "nt":
-            secure_file(p)
-        else:
-            if stat.S_IMODE(p.stat().st_mode) & 0o077:
-                raise ConfigError("Outbox must be private (chmod 600)")
-        for sc in existing_sidecars:
-            if os.name == "nt":
-                secure_file(sc)
-            elif stat.S_IMODE(sc.stat().st_mode) & 0o077:
-                raise ConfigError("Outbox must be private (chmod 600)")
     conn = sqlite3.connect(p, timeout=10)
     if os.name == "nt":
         if created:
             _apply_windows_acl(p, directory=False)
-        _validate_windows_acl(p)
+        _validate_windows_acl(p, directory=False)
     else:
         os.chmod(p, 0o600)
     conn.row_factory = sqlite3.Row
@@ -361,10 +387,12 @@ def database(directory):
                 elif stat.S_IMODE(sc.stat().st_mode) & 0o077:
                     raise ConfigError("Outbox must be private (chmod 600)")
             else:
-                if os.name == "nt":
-                    _apply_windows_acl(sc, directory=False)
-                    _validate_windows_acl(sc)
-                else:
+                # Newly created sidecars must inherit the already-validated
+                # private parent-directory DACL. Never repair them after SQLite
+                # may have written sensitive pages; fail closed if inheritance
+                # did not produce the expected ACL.
+                _validate_sqlite_state_file(sc)
+                if os.name != "nt":
                     os.chmod(sc, 0o600)
     return conn
 
