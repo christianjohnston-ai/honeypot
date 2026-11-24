@@ -177,10 +177,16 @@ def _validate_windows_acl(path, directory=None):
         sd_buffer = _windows_security_descriptor(p)
         advapi32 = ctypes.windll.advapi32
         kernel32 = ctypes.windll.kernel32
+        advapi32.IsValidSecurityDescriptor.argtypes = [ctypes.c_void_p]
+        advapi32.IsValidSecurityDescriptor.restype = wintypes.BOOL
+        advapi32.IsValidAcl.argtypes = [ctypes.c_void_p]
+        advapi32.IsValidAcl.restype = wintypes.BOOL
         advapi32.GetSecurityDescriptorDacl.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
         advapi32.GetSecurityDescriptorOwner.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)]
         advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
         advapi32.GetSecurityDescriptorOwner.restype = wintypes.BOOL
+        if not advapi32.IsValidSecurityDescriptor(sd_buffer):
+            raise ConfigError("Unable to inspect Windows access control")
         advapi32.GetAce.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
         advapi32.GetAce.restype = wintypes.BOOL
         advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
@@ -208,6 +214,8 @@ def _validate_windows_acl(path, directory=None):
             _fields_ = [("AclRevision", ctypes.c_ubyte), ("Sbz1", ctypes.c_ubyte),
                         ("AclSize", ctypes.c_ushort), ("AceCount", ctypes.c_ushort),
                         ("Sbz2", ctypes.c_ushort)]
+        if not advapi32.IsValidAcl(dacl):
+            raise ConfigError("Unable to inspect Windows access control")
         acl_struct = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
         if acl_struct.AclSize < 8 or acl_struct.AceCount == 0 or acl_struct.AceCount > 1024:
             raise ConfigError("Unable to inspect Windows access control")
