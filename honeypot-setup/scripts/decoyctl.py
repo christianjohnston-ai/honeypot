@@ -202,7 +202,7 @@ def _validate_windows_acl(path, directory=None):
                         ("AclSize", ctypes.c_ushort), ("AceCount", ctypes.c_ushort),
                         ("Sbz2", ctypes.c_ushort)]
         acl_struct = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
-        if acl_struct.AclSize == 0 or acl_struct.AceCount > 1024:
+        if acl_struct.AclSize < 8 or acl_struct.AceCount == 0 or acl_struct.AceCount > 1024:
             raise ConfigError("Unable to inspect Windows access control")
         acl_base = ctypes.cast(dacl, ctypes.c_void_p).value
         acl_limit = acl_base + acl_struct.AclSize
@@ -301,7 +301,7 @@ def _apply_windows_acl(path, directory=False):
         advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
 
         result = advapi32.SetEntriesInAclW(
-            len(approved), entries, None, ctypes.byref(new_dacl))
+            len(approved), ctypes.cast(entries, ctypes.c_void_p), None, ctypes.byref(new_dacl))
         if result != 0:
             raise ConfigError("Unable to apply Windows access control")
         # PROTECTED_DACL_SECURITY_INFORMATION prevents ambient parent grants.
