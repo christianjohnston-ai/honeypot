@@ -275,20 +275,22 @@ class Tests(unittest.TestCase):
         self.assertEqual(export.read_text(), "keep")
         self.assertEqual(d.status(self.conn)["counts"], {"accepted": 1})
 
-    def test_orphan_sqlite_sidecar_is_rejected_before_connect(self):
-        state = self.root / "orphan-state"
-        d.secure_dir(state)
-        orphan = state / "outbox.sqlite3-wal"
-        orphan.write_text("untrusted orphan")
-        if os.name == "nt":
-            subprocess.run(["icacls", str(orphan), "/grant", "*S-1-1-0:(F)"], check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            orphan.chmod(0o644)
-        with mock.patch.object(d.sqlite3, "connect") as connect:
-            with self.assertRaises(ValueError):
-                d.database(state)
-            connect.assert_not_called()
+    def test_orphan_sqlite_sidecars_are_rejected_before_connect(self):
+        for suffix in ("-wal", "-shm", "-journal"):
+            with self.subTest(suffix=suffix):
+                state = self.root / ("orphan-state-" + suffix[1:])
+                d.secure_dir(state)
+                orphan = state / ("outbox.sqlite3" + suffix)
+                orphan.write_text("untrusted orphan")
+                if os.name == "nt":
+                    subprocess.run(["icacls", str(orphan), "/grant", "*S-1-1-0:(F)"], check=True,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    orphan.chmod(0o644)
+                with mock.patch.object(d.sqlite3, "connect") as connect:
+                    with self.assertRaises(ValueError):
+                        d.database(state)
+                    connect.assert_not_called()
 
     def test_prune_locks_export_snapshot_against_concurrent_dispatch(self):
         self.add()
@@ -445,16 +447,18 @@ class WindowsAclTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             d._validate_windows_acl(p, directory=True)
 
-    def test_orphan_sidecar_with_unapproved_acl_rejected_before_connect(self):
-        state = self.root / "orphan-state"
-        d.secure_dir(state)
-        orphan = state / "outbox.sqlite3-wal"
-        orphan.write_text("untrusted orphan")
-        self._icacls_grant(orphan, "S-1-1-0")
-        with mock.patch.object(d.sqlite3, "connect") as connect:
-            with self.assertRaises(ValueError):
-                d.database(state)
-            connect.assert_not_called()
+    def test_orphan_sidecars_with_unapproved_acl_rejected_before_connect(self):
+        for suffix in ("-wal", "-shm", "-journal"):
+            with self.subTest(suffix=suffix):
+                state = self.root / ("orphan-state-" + suffix[1:])
+                d.secure_dir(state)
+                orphan = state / ("outbox.sqlite3" + suffix)
+                orphan.write_text("untrusted orphan")
+                self._icacls_grant(orphan, "S-1-1-0")
+                with mock.patch.object(d.sqlite3, "connect") as connect:
+                    with self.assertRaises(ValueError):
+                        d.database(state)
+                    connect.assert_not_called()
 
     def test_reparse_point_dir_rejected(self):
         # directory junction via mklink /J
