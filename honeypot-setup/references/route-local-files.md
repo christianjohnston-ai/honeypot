@@ -2,7 +2,7 @@
 
 Use only when the goal is noticing a modification, replacement or deletion of a **dedicated harmless decoy file**. This shipped polling watcher does not detect reads, copies, exfiltration or a secret being used. It does not identify ransomware and is not prevention. A change can be legitimate editing, backup restoration, synchronization or security software. For stolen-credential use choose a genuine instrumented token; an arbitrary fake key has no alert mechanism.
 
-Supported helper environment: Python 3.10+ on a persistent local machine or isolated Linux host. Local validation ran on macOS; Linux is source-reviewed, Windows is untested and requires separately verified ACLs/scheduling. No root is required for a file the service user can stat and a private state directory it can write. No inbound port. Needs process/scheduler lifetime, persistent SQLite, and outbound HTTPS or TLS SMTP. A sleeping/offline machine cannot observe/deliver changes in real time.
+Supported helper environment: Python 3.10+ on a persistent local machine or isolated Linux host. Local validation ran on macOS; Linux is source-reviewed. Windows now has implemented and tested ACL handling for sensitive local state, but this does not prove scheduler compatibility or reliable background execution after sleep, logout or reboot. Windows ACL support was validated on Windows 11 with Python 3.13.14. No root is required for a file the service user can stat and a private state directory it can write. No inbound port. Needs process/scheduler lifetime, persistent SQLite, and outbound HTTPS or TLS SMTP. A sleeping/offline machine cannot observe/deliver changes in real time.
 
 The watcher compares existence, device/inode, size and modification time. It never reads file contents and ignores access time. A change that is restored completely between polls, filesystem timestamp quirks, denied permissions, stopped monitoring or an attacker able to edit the watcher/state can defeat it. Stat errors fail visibly. Symlinks/directories are refused. Treat metadata as a narrow signal, not full file-audit coverage; use an existing OS/EDR audit facility if read-level evidence is required, after validating that product's actual event support.
 
@@ -39,6 +39,22 @@ The watcher compares existence, device/inode, size and modification time. It nev
 7. **Persistence.** Configure the user's existing scheduler/supervisor for `watch-poll` followed by repeated `flush` calls using absolute paths and protected environment. Agree on a poll interval and check restart/reboot/sleep behavior. Expected: two later supervised checks succeed and a fresh file test arrives within the selected latency. If no persistent runner is installed, label the setup **manual-only**, not continuously monitored. Use an independent operations check for stalled schedules and outbox failures.
 
 Setup estimate: 15–30 minutes when Python and a working alert destination exist, plus scheduler work. No new hosting fee on an existing machine; message/service fees and maintenance remain. This estimate is engineering judgment, not measured for every OS.
+
+## Windows ACL policy
+
+On Windows, POSIX mode bits are not sufficient. The helper inspects the actual DACL for the state directory, configuration file and SQLite database.
+
+Trusted principals:
+
+- The current Windows user's SID.
+- LocalSystem (`S-1-5-18`).
+- BUILTIN Administrators (`S-1-5-32-544`).
+
+Other principals receive no access grants. Inherited grants to Everyone, Authenticated Users, Users or other unapproved principals are rejected. Existing directories and configuration files are validated but never silently rewritten. Symlinks and reparse points are rejected. ACL or Windows API failures fail closed with a `ConfigError`.
+
+If an ACL check fails, restrict access to your Windows user, SYSTEM and Administrators before continuing. Do not weaken the check or rely on `chmod` success on Windows.
+
+Windows ACL support does not prove scheduler compatibility, reliable background execution after sleep, logout or reboot, or full local-file monitoring support. The watcher still only observes documented file metadata changes.
 
 ## Removal and rollback
 

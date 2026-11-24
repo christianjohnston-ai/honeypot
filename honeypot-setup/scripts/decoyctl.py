@@ -47,12 +47,223 @@ def label(value):
     return value
 
 
+def _windows_current_user_sid():
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
+        raise ConfigError("Unable to inspect Windows security token")
+    try:
+        length = wintypes.DWORD(0)
+        advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(length))
+        buffer = ctypes.create_string_buffer(length.value)
+        if not advapi32.GetTokenInformation(token, 1, buffer, length.value, ctypes.byref(length)):
+            raise ConfigError("Unable to inspect Windows security token")
+        sid_ptr = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        return sid_ptr
+    finally:
+        kernel32.CloseHandle(token)
+
+
+_WELL_KNOWN_SIDS = {"S-1-5-18", "S-1-5-32-544"}
+
+
+def _string_to_sid(value):
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    advapi32.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p)]
+    sid = ctypes.c_void_p()
+    if not advapi32.ConvertStringSidToSidW(str(value), ctypes.byref(sid)):
+        raise ConfigError("Unable to parse Windows security identifier")
+    return sid.value
+
+
+def _sid_to_string(sid_ptr):
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
+    string = ctypes.c_wchar_p()
+    if not advapi32.ConvertSidToStringSidW(sid_ptr, ctypes.byref(string)):
+        return None
+    result = string.value
+    kernel32.LocalFree(string)
+    return result
+
+
+def _approved_windows_sids():
+    current = _windows_current_user_sid()
+    approved = [current, _string_to_sid("S-1-5-18"), _string_to_sid("S-1-5-32-544")]
+    return approved
+
+
+def _is_windows_reparse_point(path):
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.windll.kernel32
+    kernel32.GetFileAttributesW.restype = wintypes.DWORD
+    attrs = kernel32.GetFileAttributesW(str(path))
+    if attrs == 0xFFFFFFFF:
+        return False
+    return bool(attrs & 0x00000400)
+
+
+def _windows_security_descriptor(path):
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    needed = wintypes.DWORD(0)
+    advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, None, 0, ctypes.byref(needed))
+    if needed.value == 0:
+        raise ConfigError("Unable to inspect Windows access control")
+    buffer = ctypes.create_string_buffer(needed.value)
+    if not advapi32.GetFileSecurityW(str(path), 0x00000004 | 0x00000001, buffer, needed.value, ctypes.byref(needed)):
+        raise ConfigError("Unable to inspect Windows access control")
+    return buffer
+
+
+def _validate_windows_acl(path):
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    p = Path(path)
+    if p.is_symlink() or _is_windows_reparse_point(p):
+        raise ConfigError("State path must not be a symlink or reparse point")
+    try:
+        sd_buffer = _windows_security_descriptor(p)
+        advapi32 = ctypes.windll.advapi32
+        # Get DACL.
+        dacl = ctypes.c_void_p()
+        dacl_present = wintypes.BOOL()
+        dacl_defaulted = wintypes.BOOL()
+        owner = ctypes.c_void_p()
+        owner_defaulted = wintypes.BOOL()
+        if not advapi32.GetSecurityDescriptorDacl(sd_buffer, ctypes.byref(dacl_present), ctypes.byref(dacl), ctypes.byref(dacl_defaulted)):
+            raise ConfigError("Unable to inspect Windows access control")
+        if not dacl_present.value or not dacl.value:
+            raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+        if not advapi32.GetSecurityDescriptorOwner(sd_buffer, ctypes.byref(owner), ctypes.byref(owner_defaulted)):
+            raise ConfigError("Unable to inspect Windows access control")
+        approved = _approved_windows_sids()
+        if owner.value is not None and owner.value not in approved:
+            # Compare by string.
+            owner_string = _sid_to_string(owner.value)
+            approved_strings = {_sid_to_string(x) for x in approved}
+            if owner_string not in approved_strings:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+        # Parse ACL header.
+        acl = ctypes.cast(dacl, ctypes.POINTER(ctypes.c_byte)).contents  # placeholder
+        # Use ACL structure.
+        class _ACL(ctypes.Structure):
+            _fields_ = [("AclRevision", ctypes.c_ubyte), ("Sbz1", ctypes.c_ubyte),
+                        ("AclSize", ctypes.c_ushort), ("AceCount", ctypes.c_ushort),
+                        ("Sbz2", ctypes.c_ushort)]
+        acl_struct = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
+        allowed_ace_types = {0, 5, 9, 11}
+        denied_ace_types = {1, 6, 10, 12}
+        for i in range(acl_struct.AceCount):
+            ace_ptr = ctypes.c_void_p()
+            if not advapi32.GetAce(dacl, i, ctypes.byref(ace_ptr)):
+                raise ConfigError("Unable to inspect Windows access control")
+            header = ctypes.cast(ace_ptr, ctypes.POINTER(ctypes.c_ubyte * 4)).contents
+            ace_type = header[0]
+            ace_flags = header[1]
+            if ace_type in denied_ace_types:
+                continue
+            if ace_type not in allowed_ace_types:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+            # SID offset: ACE_HEADER(4) + Mask(4) = 8
+            sid_ptr = ace_ptr.value + 8
+            # For object ACEs, SID offset differs; handle common standard only. If invalid, fail closed.
+            sid_value = ctypes.cast(sid_ptr, ctypes.c_void_p).value
+            # Validate SID by converting.
+            sid_string = _sid_to_string(sid_value)
+            if sid_string is None:
+                raise ConfigError("Unable to inspect Windows access control")
+            approved_strings = {_sid_to_string(x) for x in approved}
+            if sid_string not in approved_strings:
+                raise ConfigError("State permissions are unsafe. Restrict access to your Windows user, SYSTEM and Administrators before continuing.")
+    except ConfigError:
+        raise
+    except Exception:
+        raise ConfigError("Unable to inspect Windows access control")
+
+
+def _apply_windows_acl(path, directory=False):
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    approved = _approved_windows_sids()
+    inheritance = 0x03 if directory else 0x00
+    # Build EXPLICIT_ACCESS list.
+    class _TRUSTEE(ctypes.Structure):
+        _fields_ = [("pMultipleTrustee", ctypes.c_void_p),
+                    ("MultipleTrusteeOperation", ctypes.c_int),
+                    ("TrusteeForm", ctypes.c_int),
+                    ("TrusteeType", ctypes.c_int),
+                    ("ptstrName", ctypes.c_void_p)]
+    class _EXPLICIT_ACCESS(ctypes.Structure):
+        _fields_ = [("grfAccessPermissions", wintypes.DWORD),
+                    ("grfAccessMode", ctypes.c_int),
+                    ("grfInheritance", wintypes.DWORD),
+                    ("Trustee", _TRUSTEE)]
+    entries = (_EXPLICIT_ACCESS * len(approved))()
+    for idx, sid in enumerate(approved):
+        entries[idx].grfAccessPermissions = 0x10000000  # GENERIC_ALL
+        entries[idx].grfAccessMode = 2  # SET_ACCESS
+        entries[idx].grfInheritance = inheritance
+        entries[idx].Trustee.pMultipleTrustee = None
+        entries[idx].Trustee.MultipleTrusteeOperation = 0
+        entries[idx].Trustee.TrusteeForm = 0  # TRUSTEE_IS_SID
+        entries[idx].Trustee.TrusteeType = 1  # TRUSTEE_IS_USER (generic)
+        entries[idx].Trustee.ptstrName = sid
+    new_dacl = ctypes.c_void_p()
+    res = advapi32.SetEntriesInAclW(len(approved), entries, None, ctypes.byref(new_dacl))
+    if res != 0:
+        raise ConfigError("Unable to apply Windows access control")
+    try:
+        # PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+        info = 0x00000004 | 0x80000000
+        r = advapi32.SetNamedSecurityInfoW(str(path), 1, info, None, None, new_dacl, None)
+        if r != 0:
+            raise ConfigError("Unable to apply Windows access control")
+    finally:
+        kernel32.LocalFree(new_dacl)
+
+
 def secure_dir(path):
     path = Path(path).expanduser()
     if path.is_symlink():
         raise ConfigError("State directory must not be a symlink")
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("State directory must not be a reparse point")
+    created = not path.exists()
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if os.name == "posix" and stat.S_IMODE(path.stat().st_mode) & 0o077:
+    if os.name == "nt" and _is_windows_reparse_point(path):
+        raise ConfigError("State directory must not be a reparse point")
+    if os.name == "nt":
+        if created:
+            _apply_windows_acl(path, directory=True)
+        _validate_windows_acl(path)
+    elif stat.S_IMODE(path.stat().st_mode) & 0o077:
         raise ConfigError("State directory must be private (chmod 700)")
     return path
 
@@ -61,7 +272,11 @@ def secure_file(path):
     p = Path(path)
     if p.is_symlink() or not p.is_file():
         raise ConfigError("Expected a regular, non-symlink configuration file")
-    if os.name == "posix" and stat.S_IMODE(p.stat().st_mode) & 0o077:
+    if os.name == "nt" and _is_windows_reparse_point(p):
+        raise ConfigError("Expected a regular, non-symlink configuration file")
+    if os.name == "nt":
+        _validate_windows_acl(p)
+    elif stat.S_IMODE(p.stat().st_mode) & 0o077:
         raise ConfigError("Configuration containing destinations must be private (chmod 600)")
     return p
 
@@ -71,8 +286,22 @@ def database(directory):
     p = directory / "outbox.sqlite3"
     if p.is_symlink():
         raise ConfigError("Outbox must not be a symlink")
+    if os.name == "nt" and _is_windows_reparse_point(p):
+        raise ConfigError("Outbox must not be a reparse point")
+    created = not p.exists()
+    if (not created) and os.name == "nt":
+        secure_file(p)
+    if (not created) and os.name == "posix":
+        # validate mode for existing
+        if stat.S_IMODE(p.stat().st_mode) & 0o077:
+            raise ConfigError("Outbox must be private (chmod 600)")
     conn = sqlite3.connect(p, timeout=10)
-    os.chmod(p, 0o600)
+    if os.name == "nt":
+        if created:
+            _apply_windows_acl(p, directory=False)
+        _validate_windows_acl(p)
+    else:
+        os.chmod(p, 0o600)
     conn.row_factory = sqlite3.Row
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS events (
@@ -495,7 +724,10 @@ def main(argv=None):
                     secure_dir(target.parent)
                     # x prevents overwrite; mode is restricted before evidence is written.
                     with target.open("x", encoding="utf-8") as out:
-                        os.chmod(target, 0o600)
+                        if os.name == "nt":
+                            _apply_windows_acl(target, directory=False)
+                        else:
+                            os.chmod(target, 0o600)
                         for row in rows: out.write(json.dumps(dict(row)) + "\n")
                         out.flush(); os.fsync(out.fileno())
                 count = conn.execute("DELETE FROM events WHERE " + where, (cutoff,)).rowcount

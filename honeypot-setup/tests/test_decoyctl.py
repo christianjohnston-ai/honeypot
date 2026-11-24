@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import threading
 import time
@@ -282,6 +283,111 @@ class Tests(unittest.TestCase):
             other.close()
         self.assertEqual(len(export.read_text().splitlines()), 1)
         self.assertEqual(d.status(self.conn)["counts"], {"pending": 1})
+
+
+@unittest.skipUnless(os.name == "nt", "Windows ACL tests require Windows")
+class WindowsAclTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _icacls_grant(self, path, sid):
+        subprocess.run(["icacls", str(path), "/grant", f"*{sid}:(F)"], check=True,
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def test_create_private_state_dir(self):
+        p = self.root / "state"
+        result = d.secure_dir(p)
+        self.assertEqual(result, p)
+        d.secure_dir(p)  # idempotent validation
+
+    def test_existing_approved_dir(self):
+        p = self.root / "state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        self.assertEqual(d.secure_dir(p), p)
+
+    def test_reject_everyone_dir(self):
+        p = self.root / "state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        self._icacls_grant(p, "S-1-1-0")
+        with self.assertRaises(ValueError):
+            d.secure_dir(p)
+
+    def test_reject_authenticated_users_or_users(self):
+        for sid in ("S-1-5-11", "S-1-5-32-545"):
+            p = self.root / f"state_{sid}"
+            p.mkdir()
+            d._apply_windows_acl(p, directory=True)
+            self._icacls_grant(p, sid)
+            with self.assertRaises(ValueError):
+                d.secure_dir(p)
+
+    def test_database_create_and_validate(self):
+        st = self.root / "state"
+        conn = d.database(st)
+        self.assertTrue((st / "outbox.sqlite3").is_file())
+        conn.close()
+        conn2 = d.database(st)
+        conn2.close()
+
+    def test_database_unsafe_rejected(self):
+        st = self.root / "state"
+        conn = d.database(st)
+        conn.close()
+        db = st / "outbox.sqlite3"
+        self._icacls_grant(db, "S-1-1-0")
+        with self.assertRaises(ValueError):
+            d.database(st)
+
+    def test_config_accepted(self):
+        p = self.root / "config.json"
+        cfg = {"channel": "webhook", "url_env": "TEST_DESTINATION", "destination_label": "Lab"}
+        p.write_text(__import__("json").dumps(cfg))
+        d._apply_windows_acl(p, directory=False)
+        os.environ["TEST_DESTINATION"] = "https://example.invalid/x"
+        self.assertEqual(d.load_config(p)["channel"], "webhook")
+
+    def test_config_unsafe_rejected(self):
+        p = self.root / "config.json"
+        cfg = {"channel": "webhook", "url_env": "TEST_DESTINATION", "destination_label": "Lab"}
+        p.write_text(__import__("json").dumps(cfg))
+        d._apply_windows_acl(p, directory=False)
+        self._icacls_grant(p, "S-1-1-0")
+        os.environ["TEST_DESTINATION"] = "https://example.invalid/x"
+        with self.assertRaises(ValueError):
+            d.load_config(p)
+
+    def test_symlink_rejected(self):
+        p = self.root / "config.json"
+        p.write_text("{}")
+        d._apply_windows_acl(p, directory=False)
+        link = self.root / "link.json"
+        link.symlink_to(p)
+        with self.assertRaises(ValueError):
+            d.secure_file(link)
+
+    def test_acl_inspection_failure_fail_closed(self):
+        p = self.root / "state"
+        p.mkdir()
+        d._apply_windows_acl(p, directory=True)
+        with mock.patch.object(d, "_validate_windows_acl", side_effect=d.ConfigError("boom")):
+            with self.assertRaises(ValueError):
+                d.secure_dir(p)
+
+    def test_reparse_point_dir_rejected(self):
+        # directory junction via mklink /J
+        target = self.root / "target"
+        target.mkdir()
+        junction = self.root / "junction"
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+                      check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with self.assertRaises(ValueError):
+            d.secure_dir(junction)
 
 
 if __name__ == "__main__":

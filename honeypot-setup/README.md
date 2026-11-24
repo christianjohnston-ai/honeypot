@@ -62,7 +62,7 @@ python3 -m unittest discover -s tests -v
 node tests/test_reference_snippets.mjs
 ```
 
-The Python helpers target local machines and isolated persistent Linux hosts. Passing local tests does not establish serverless compatibility or successful cloud notification delivery.
+The Python helpers target local machines and isolated persistent Linux hosts. Windows now has implemented and tested ACL handling for sensitive local state, but that does not establish scheduler compatibility, reliable background execution after sleep, logout or reboot, or full local-file monitoring support. Passing local tests does not establish serverless compatibility or successful cloud notification delivery.
 
 ## Operate and remove
 
