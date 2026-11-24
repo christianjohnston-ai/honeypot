@@ -255,27 +255,31 @@ def _apply_windows_acl(path, directory=False):
         return
     import ctypes
     from ctypes import wintypes
+
     advapi32 = ctypes.windll.advapi32
     kernel32 = ctypes.windll.kernel32
-    approved_strings = _approved_windows_sid_strings()
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     approved = []
     new_dacl = ctypes.c_void_p()
     try:
-        for value in approved_strings:
+        for value in _approved_windows_sid_strings():
             approved.append(_string_to_sid(value))
+
+        class _TRUSTEE(ctypes.Structure):
+            _fields_ = [("pMultipleTrustee", ctypes.c_void_p),
+                        ("MultipleTrusteeOperation", ctypes.c_int),
+                        ("TrusteeForm", ctypes.c_int),
+                        ("TrusteeType", ctypes.c_int),
+                        ("ptstrName", ctypes.c_void_p)]
+
+        class _EXPLICIT_ACCESS(ctypes.Structure):
+            _fields_ = [("grfAccessPermissions", wintypes.DWORD),
+                        ("grfAccessMode", ctypes.c_int),
+                        ("grfInheritance", wintypes.DWORD),
+                        ("Trustee", _TRUSTEE)]
+
         inheritance = 0x03 if directory else 0x00
-    # Build EXPLICIT_ACCESS list.
-    class _TRUSTEE(ctypes.Structure):
-        _fields_ = [("pMultipleTrustee", ctypes.c_void_p),
-                    ("MultipleTrusteeOperation", ctypes.c_int),
-                    ("TrusteeForm", ctypes.c_int),
-                    ("TrusteeType", ctypes.c_int),
-                    ("ptstrName", ctypes.c_void_p)]
-    class _EXPLICIT_ACCESS(ctypes.Structure):
-        _fields_ = [("grfAccessPermissions", wintypes.DWORD),
-                    ("grfAccessMode", ctypes.c_int),
-                    ("grfInheritance", wintypes.DWORD),
-                    ("Trustee", _TRUSTEE)]
         entries = (_EXPLICIT_ACCESS * len(approved))()
         for idx, sid in enumerate(approved):
             entries[idx].grfAccessPermissions = 0x10000000  # GENERIC_ALL
@@ -286,20 +290,25 @@ def _apply_windows_acl(path, directory=False):
             entries[idx].Trustee.TrusteeForm = 0  # TRUSTEE_IS_SID
             entries[idx].Trustee.TrusteeType = 1  # TRUSTEE_IS_USER (generic)
             entries[idx].Trustee.ptstrName = sid
-        advapi32.SetEntriesInAclW.argtypes = [wintypes.ULONG, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+
+        advapi32.SetEntriesInAclW.argtypes = [
+            wintypes.ULONG, ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p)]
         advapi32.SetEntriesInAclW.restype = wintypes.DWORD
-        advapi32.SetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
-                                                   ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
         advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
-        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
-        kernel32.LocalFree.restype = ctypes.c_void_p
-        res = advapi32.SetEntriesInAclW(len(approved), entries, None, ctypes.byref(new_dacl))
-        if res != 0:
+
+        result = advapi32.SetEntriesInAclW(
+            len(approved), entries, None, ctypes.byref(new_dacl))
+        if result != 0:
             raise ConfigError("Unable to apply Windows access control")
-        # PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+        # PROTECTED_DACL_SECURITY_INFORMATION prevents ambient parent grants.
         info = 0x00000004 | 0x80000000
-        r = advapi32.SetNamedSecurityInfoW(str(path), 1, info, None, None, new_dacl, None)
-        if r != 0:
+        result = advapi32.SetNamedSecurityInfoW(
+            str(path), 1, info, None, None, new_dacl, None)
+        if result != 0:
             raise ConfigError("Unable to apply Windows access control")
     except ConfigError:
         raise
@@ -311,7 +320,6 @@ def _apply_windows_acl(path, directory=False):
                 kernel32.LocalFree(ctypes.c_void_p(sid))
         if new_dacl:
             kernel32.LocalFree(new_dacl)
-
 
 def secure_dir(path):
     path = Path(path).expanduser()
